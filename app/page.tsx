@@ -9,9 +9,17 @@ import {
 } from '../data/catalog';
 
 const WHATSAPP_NUMBER = '905366299127';
+const DISPLAY_PHONE_NUMBER = '+90 (536) 629 91 27';
 const BASE_PRICE_USD = 30.0;
 const EUR_USD_RATE = 1.08;
 const VAT_RATE = 0.2;
+
+interface ChatMessage {
+  id: string;
+  sender: 'assistant' | 'user';
+  text: string;
+  showDirectContact?: boolean;
+}
 
 const LOCALE_DATA: Record<
   string,
@@ -105,6 +113,18 @@ export default function Home() {
   const [optionNote, setOptionNote] = useState('');
   const [requestSent, setRequestSent] = useState(false);
 
+  const [assistantOpen, setAssistantOpen] = useState(true);
+  const [chatInput, setChatInput] = useState('');
+  const [copiedPhone, setCopiedPhone] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome-1',
+      sender: 'assistant',
+      text: 'Merhaba, HASTEL AI Teklif Asistanı aktif. WhatsApp girişi yapmadan buradan ölçü, kaplama/opsiyon veya ihracat hakkında yazabilir; isterseniz doğrudan satış hattımıza geçebilirsiniz.',
+      showDirectContact: true,
+    },
+  ]);
+
   const locale = LOCALE_DATA[vpnLocation] || LOCALE_DATA['Germany/Europe'];
 
   const handleSelectProduct = (
@@ -157,7 +177,7 @@ export default function Home() {
 
   const priceDisplay = `${Math.round(totalCost).toLocaleString('tr-TR')} ${locale.currency}`;
 
-  const buildWhatsAppUrl = (includeOptionNote = false) => {
+  const buildWhatsAppUrl = (extraText = '') => {
     const optionLines =
       selectedOptions.length > 0
         ? selectedOptions.map((o) => `- ${o.label}`).join('\n')
@@ -173,21 +193,101 @@ export default function Home() {
       optionLines,
     ];
 
-    if (includeOptionNote && optionNote.trim()) {
-      lines.push(`• Özel Not: ${optionNote.trim()}`);
+    if (extraText.trim()) {
+      lines.push(`• Not / Mesaj: ${extraText.trim()}`);
     }
 
     const encoded = encodeURIComponent(lines.join('\n'));
     return `https://wa.me/${WHATSAPP_NUMBER}?text=${encoded}`;
   };
 
-  const handleDirectWhatsApp = () => {
-    window.open(buildWhatsAppUrl(false), '_blank', 'noopener,noreferrer');
+  const generateAssistantReply = (rawText: string): ChatMessage => {
+    const q = rawText.toLowerCase();
+    const optSummary =
+      selectedOptions.length > 0
+        ? selectedOptions.map((o) => o.label).join(', ')
+        : 'standart konfigürasyon';
+
+    if (
+      q.includes('numara') ||
+      q.includes('telefon') ||
+      q.includes('iletişim') ||
+      q.includes('iletisim') ||
+      q.includes('ara') ||
+      q.includes('whatsapp') ||
+      q.includes('wp')
+    ) {
+      return {
+        id: `bot-${Date.now()}`,
+        sender: 'assistant',
+        text: `${selectedProduct.title} (${width}m x ${height}m, ${totalSqm} m², tahmini ${priceDisplay}) için doğrudan satış/teklif iletişim hattımız aşağıdadır. Dilerseniz numarayı kopyalayabilir veya WhatsApp üzerinden hazır özet gönderebilirsiniz.`,
+        showDirectContact: true,
+      };
+    }
+
+    if (
+      q.includes('fiyat') ||
+      q.includes('maliyet') ||
+      q.includes('teklif') ||
+      q.includes('ölçü') ||
+      q.includes('olcu') ||
+      q.includes('opsiyon')
+    ) {
+      return {
+        id: `bot-${Date.now()}`,
+        sender: 'assistant',
+        text: `Şu an ${vpnLocation} bölgesi için "${selectedProduct.title}" seçili. ${width}m x ${height}m (${totalSqm} m²) ve ${optSummary} ile tahmini bedel ${priceDisplay} görünüyor. Kesin proje fiyatı ve özel opsiyon için doğrudan iletişim numaramızı kullanabilirsiniz.`,
+        showDirectContact: true,
+      };
+    }
+
+    return {
+      id: `bot-${Date.now()}`,
+      sender: 'assistant',
+      text: `Mesajınızı aldım ("${rawText.trim()}"). ${selectedProduct.title} sisteminde ${width}m x ${height}m (${totalSqm} m²) için tahmini tutar ${priceDisplay}. Detaylı görüşme veya doğrudan numara bilgisi isterseniz satış hattımızı aşağıdan görebilirsiniz.`,
+      showDirectContact: true,
+    };
+  };
+
+  const handleChatSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      text: chatInput.trim(),
+    };
+    const replyMsg = generateAssistantReply(chatInput);
+    setMessages((prev) => [...prev, userMsg, replyMsg]);
+    setChatInput('');
+  };
+
+  const handleCopyPhone = async () => {
+    try {
+      await navigator.clipboard.writeText(DISPLAY_PHONE_NUMBER);
+      setCopiedPhone(true);
+      setTimeout(() => setCopiedPhone(false), 2500);
+    } catch {
+      setCopiedPhone(false);
+    }
   };
 
   const handleOptionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setRequestSent(true);
+    const noteText = optionNote.trim()
+      ? `Opsiyon notu kaydedildi: "${optionNote.trim()}"`
+      : `Opsiyon talebi (${selectedOptions.length} opsiyon) hazırlandı.`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `opt-${Date.now()}`,
+        sender: 'assistant',
+        text: `${noteText} İsterseniz doğrudan iletişim numaramız üzerinden bize ulaşabilir veya WhatsApp ile özet gönderebilirsiniz.`,
+        showDirectContact: true,
+      },
+    ]);
+    setAssistantOpen(true);
   };
 
   return (
@@ -481,7 +581,18 @@ export default function Home() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={handleDirectWhatsApp}
+                onClick={() => {
+                  setAssistantOpen(true);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: `cta-${Date.now()}`,
+                      sender: 'assistant',
+                      text: `WhatsApp girişine takılmadan buradan devam edebilirsiniz. Doğrudan iletişim hattımız: ${DISPLAY_PHONE_NUMBER}. Dilerseniz aşağıdan doğrudan arayabilir, numarayı kopyalayabilir veya WhatsApp penceresini açabilirsiniz.`,
+                      showDirectContact: true,
+                    },
+                  ]);
+                }}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-3 px-5 rounded-xl cursor-pointer text-sm"
               >
                 {locale.ctaText}
@@ -521,15 +632,15 @@ export default function Home() {
                     <div className="space-y-2">
                       <p className="text-emerald-400 font-medium">
                         Opsiyon talebiniz ({selectedOptions.length} seçili
-                        opsiyon) hazırlandı.
+                        opsiyon) hazırlandı. Doğrudan hat: {DISPLAY_PHONE_NUMBER}
                       </p>
                       <a
-                        href={buildWhatsAppUrl(true)}
+                        href={buildWhatsAppUrl(optionNote)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-block w-full text-center bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 rounded-lg"
                       >
-                        Not ile WhatsApp&apos;ta Gönder
+                        İsteğe Bağlı WhatsApp&apos;ta Aç
                       </a>
                     </div>
                   )}
@@ -538,10 +649,96 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* Giriş Gerektirmeyen AI Asistan & Doğrudan İletişim Kutusu */}
+        <section className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <span className="text-[11px] font-mono uppercase text-emerald-400">
+                Giriş Gerektirmez • Anlık Yanıt + İletişim Yönlendirme
+              </span>
+              <h2 className="text-lg font-bold text-slate-100">
+                HASTEL AI Asistan &amp; Doğrudan İletişim
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssistantOpen(!assistantOpen)}
+              className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 cursor-pointer"
+            >
+              {assistantOpen ? 'Asistanı Gizle' : 'Asistanı Aç'}
+            </button>
+          </div>
+
+          {assistantOpen && (
+            <div className="space-y-4">
+              <div className="max-h-64 overflow-y-auto space-y-2.5 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs">
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`rounded-xl p-3 space-y-2 ${
+                      m.sender === 'assistant'
+                        ? 'bg-slate-900 border border-slate-800 text-slate-200'
+                        : 'bg-emerald-950/40 border border-emerald-700/40 text-emerald-100 ml-auto max-w-md'
+                    }`}
+                  >
+                    <p className="leading-relaxed">{m.text}</p>
+                    {m.showDirectContact && (
+                      <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <span className="font-mono text-emerald-400 font-bold">
+                          Doğrudan Hat: {DISPLAY_PHONE_NUMBER}
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={handleCopyPhone}
+                            className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold cursor-pointer"
+                          >
+                            {copiedPhone ? 'Numara Kopyalandı' : 'Numarayı Kopyala'}
+                          </button>
+                          <a
+                            href={`tel:${WHATSAPP_NUMBER}`}
+                            className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-emerald-300 font-semibold"
+                          >
+                            Ara
+                          </a>
+                          <a
+                            href={buildWhatsAppUrl(chatInput)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
+                          >
+                            WhatsApp&apos;a Aktar
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <form onSubmit={handleChatSend} className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Örn: 100m panel çit için doğrudan iletişim numarası ve fiyat bilgisi alabilir miyim?"
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer"
+                >
+                  Gönder
+                </button>
+              </form>
+            </div>
+          )}
+        </section>
       </div>
 
       <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-        HASTEL B2B İhracat Altyapısı
+        HASTEL B2B İhracat Altyapısı • İletişim: {DISPLAY_PHONE_NUMBER}
       </footer>
     </main>
   );
