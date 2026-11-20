@@ -8,6 +8,7 @@ import {
   type ProductOption,
 } from '../data/catalog';
 
+const WHATSAPP_NUMBER = '905366299127';
 const BASE_PRICE_USD = 30.0;
 const EUR_USD_RATE = 1.08;
 const VAT_RATE = 0.2;
@@ -155,6 +156,39 @@ export default function Home() {
   }
 
   const priceDisplay = `${Math.round(totalCost).toLocaleString('tr-TR')} ${locale.currency}`;
+
+  const buildWhatsAppUrl = (includeOptionNote = false) => {
+    const optionLines =
+      selectedOptions.length > 0
+        ? selectedOptions.map((o) => `- ${o.label}`).join('\n')
+        : '- Standart Konfigürasyon';
+
+    const lines = [
+      'Merhaba HASTEL Ekibi, proje teklifi / opsiyon talebi iletmek istiyorum:',
+      `• Bölge: ${vpnLocation}`,
+      `• Ürün: ${selectedProduct.title}`,
+      `• Ölçüler: ${width} m x ${height} m (${totalSqm} m²)`,
+      `• Tahmini Tutar: ${priceDisplay}`,
+      '• Seçili Opsiyonlar:',
+      optionLines,
+    ];
+
+    if (includeOptionNote && optionNote.trim()) {
+      lines.push(`• Özel Not: ${optionNote.trim()}`);
+    }
+
+    const encoded = encodeURIComponent(lines.join('\n'));
+    return `https://wa.me/${WHATSAPP_NUMBER}?text=${encoded}`;
+  };
+
+  const handleDirectWhatsApp = () => {
+    window.open(buildWhatsAppUrl(false), '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOptionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRequestSent(true);
+  };
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
@@ -447,6 +481,7 @@ export default function Home() {
             <div className="space-y-3">
               <button
                 type="button"
+                onClick={handleDirectWhatsApp}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-3 px-5 rounded-xl cursor-pointer text-sm"
               >
                 {locale.ctaText}
@@ -466,10 +501,7 @@ export default function Home() {
 
               {optionRequestOpen && (
                 <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setRequestSent(true);
-                  }}
+                  onSubmit={handleOptionSubmit}
                   className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5 text-xs"
                 >
                   <textarea
@@ -486,10 +518,20 @@ export default function Home() {
                     Opsiyon Talebini Hazırla
                   </button>
                   {requestSent && (
-                    <p className="text-emerald-400 font-medium">
-                      Opsiyon talebiniz ({selectedOptions.length} seçili
-                      opsiyon) hazırlandı.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-emerald-400 font-medium">
+                        Opsiyon talebiniz ({selectedOptions.length} seçili
+                        opsiyon) hazırlandı.
+                      </p>
+                      <a
+                        href={buildWhatsAppUrl(true)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block w-full text-center bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 rounded-lg"
+                      >
+                        Not ile WhatsApp&apos;ta Gönder
+                      </a>
+                    </div>
                   )}
                 </form>
               )}
